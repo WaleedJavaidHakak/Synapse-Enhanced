@@ -1,0 +1,371 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider     = "mysql"
+  url          = env("DATABASE_URL")
+  relationMode = "prisma"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  clerkId   String   @unique
+  email     String   @unique
+  name      String
+  imageUrl  String?  @db.VarChar(500)
+  phone     String?
+  bio       String   @default("Hey there! I'm using WhatsApp Clone.") @db.VarChar(500)
+  isOnline  Boolean  @default(false)
+  lastSeen  DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  sentMessages     Message[]          @relation("MessageSender")
+  conversations    ConversationUser[]
+  groupsCreated    Group[]            @relation("GroupCreator")
+  groupMembers     GroupMember[]
+  contacts         Contact[]          @relation("UserContacts")
+  contactOf        Contact[]          @relation("ContactUser")
+  messageReads     MessageRead[]
+  messageReactions MessageReaction[]
+  settings         UserSettings? // ✅ Added missing relationship
+
+  // Public profile extras (shown in Discover)
+  interests String? @db.VarChar(300)
+  location  String? @db.VarChar(100)
+
+  // Privacy. CONNECTIONS = people you share a chat or group with.
+  isDiscoverable         Boolean           @default(true)
+  profilePhotoVisibility Visibility        @default(EVERYONE)
+  aboutVisibility        Visibility        @default(EVERYONE)
+  lastSeenVisibility     Visibility        @default(EVERYONE)
+  phoneVisibility        Visibility        @default(NOBODY)
+  emailVisibility        Visibility        @default(NOBODY)
+  messagePermission      MessagePermission @default(REQUESTS)
+  readReceipts           Boolean           @default(true)
+
+  sentRequests     ChatRequest[] @relation("RequestSender")
+  receivedRequests ChatRequest[] @relation("RequestReceiver")
+  blocksMade       UserBlock[]   @relation("Blocker")
+  blocksReceived   UserBlock[]   @relation("Blocked")
+  reportsMade      UserReport[]  @relation("Reporter")
+  reportsReceived  UserReport[]  @relation("Reported")
+
+  @@map("users")
+}
+
+model Conversation {
+  id        String           @id @default(cuid())
+  type      ConversationType @default(DIRECT)
+  name      String?
+  imageUrl  String?          @db.VarChar(500)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  // Relationships
+  users    ConversationUser[]
+  messages Message[]
+
+  @@map("conversations")
+}
+
+model ConversationUser {
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String
+  joinedAt       DateTime @default(now())
+  lastReadAt     DateTime @default(now())
+
+  // Relationships
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([conversationId])
+  @@index([userId])
+  @@map("conversation_users")
+}
+
+model Group {
+  id          String   @id @default(cuid())
+  name        String
+  description String?  @db.VarChar(1000)
+  imageUrl    String?  @db.VarChar(500)
+  creatorId   String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  creator  User          @relation("GroupCreator", fields: [creatorId], references: [id])
+  members  GroupMember[]
+  messages Message[]     @relation("GroupMessages")
+
+  @@index([creatorId])
+  @@map("groups")
+}
+
+model GroupMember {
+  id         String    @id @default(cuid())
+  groupId    String
+  userId     String
+  role       GroupRole @default(MEMBER)
+  joinedAt   DateTime  @default(now())
+  lastReadAt DateTime  @default(now())
+
+  // Relationships
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+  @@map("group_members")
+}
+
+model Message {
+  id             String      @id @default(cuid())
+  content        String      @db.Text
+  type           MessageType @default(TEXT)
+  senderId       String
+  conversationId String?
+  groupId        String?
+  replyToId      String?
+  fileUrl        String?     @db.VarChar(1000)
+  fileName       String?
+  fileSize       Int?
+  duration       Int?
+  isEdited       Boolean     @default(false)
+  isDeleted      Boolean     @default(false)
+  isDelivered    Boolean     @default(false)
+  isRead         Boolean     @default(false)
+  readAt         DateTime?
+  deliveredAt    DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  // Relationships
+  sender       User              @relation("MessageSender", fields: [senderId], references: [id])
+  conversation Conversation?     @relation(fields: [conversationId], references: [id])
+  group        Group?            @relation("GroupMessages", fields: [groupId], references: [id])
+  replyTo      Message?          @relation("MessageReply", fields: [replyToId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  replies      Message[]         @relation("MessageReply")
+  readBy       MessageRead[]
+  reactions    MessageReaction[]
+
+  @@index([senderId])
+  @@index([conversationId])
+  @@index([groupId])
+  @@index([replyToId])
+  @@index([createdAt])
+  @@map("messages")
+}
+
+model MessageRead {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+
+  // Relationships
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([messageId])
+  @@index([userId])
+  @@map("message_reads")
+}
+
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  // Relationships
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@index([userId])
+  @@map("message_reactions")
+}
+
+model Contact {
+  id        String   @id @default(cuid())
+  userId    String
+  contactId String
+  name      String?
+  createdAt DateTime @default(now())
+
+  // Relationships
+  user    User @relation("UserContacts", fields: [userId], references: [id], onDelete: Cascade)
+  contact User @relation("ContactUser", fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, contactId])
+  @@index([userId])
+  @@index([contactId])
+  @@map("contacts")
+}
+
+model UserSettings {
+  id                   String  @id @default(cuid())
+  userId               String  @unique
+  theme                String  @default("light")
+  notificationsEnabled Boolean @default(true)
+  soundEnabled         Boolean @default(true)
+  readReceiptsEnabled  Boolean @default(true)
+  lastSeenEnabled      Boolean @default(true)
+  profilePhotoEnabled  Boolean @default(true)
+  language             String  @default("en")
+  fontSize             String  @default("medium")
+  wallpaper            String? @db.VarChar(500)
+
+  // Relationships
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_settings")
+}
+
+model MessageStatus {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  status    String
+  timestamp DateTime @default(now())
+
+  @@unique([messageId, userId])
+  @@index([messageId])
+  @@index([userId])
+  @@map("message_status")
+}
+
+model UserPresence {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  isOnline  Boolean  @default(false)
+  lastSeen  DateTime @default(now())
+  status    String?  @default("available")
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([isOnline])
+  @@map("user_presence")
+}
+
+enum ConversationType {
+  DIRECT
+  GROUP
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  AUDIO
+  VIDEO
+  DOCUMENT
+  VOICE
+  STICKER
+  LOCATION
+  CONTACT
+}
+
+enum GroupRole {
+  ADMIN
+  MODERATOR
+  MEMBER
+}
+
+enum UserStatus {
+  AVAILABLE
+  BUSY
+  AWAY
+  INVISIBLE
+}
+
+enum Visibility {
+  EVERYONE
+  CONNECTIONS
+  NOBODY
+}
+
+enum MessagePermission {
+  EVERYONE
+  REQUESTS
+  NOBODY
+}
+
+enum RequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+// A stranger asking to start a 1:1 chat, with a short intro message
+model ChatRequest {
+  id          String        @id @default(cuid())
+  senderId    String
+  receiverId  String
+  message     String        @db.VarChar(500)
+  status      RequestStatus @default(PENDING)
+  createdAt   DateTime      @default(now())
+  respondedAt DateTime?
+
+  sender   User @relation("RequestSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("RequestReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([senderId, receiverId])
+  @@index([receiverId, status])
+  @@map("chat_requests")
+}
+
+model UserBlock {
+  id        String   @id @default(cuid())
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  blocker User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+  @@map("user_blocks")
+}
+
+model UserReport {
+  id         String   @id @default(cuid())
+  reporterId String
+  reportedId String
+  reason     String   @db.VarChar(50)
+  details    String?  @db.VarChar(1000)
+  createdAt  DateTime @default(now())
+
+  reporter User @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reported User @relation("Reported", fields: [reportedId], references: [id], onDelete: Cascade)
+
+  @@index([reportedId])
+  @@index([reporterId])
+  @@map("user_reports")
+}
+
+// Uploaded files kept in the database (UPLOAD_STORAGE=database), for hosts without a persistent disk
+model MediaFile {
+  id        String   @id @default(cuid())
+  ownerId   String
+  mimeType  String   @db.VarChar(120)
+  fileName  String   @db.VarChar(255)
+  size      Int
+  data      Bytes    @db.LongBlob
+  createdAt DateTime @default(now())
+
+  @@index([ownerId])
+  @@map("media_files")
+}

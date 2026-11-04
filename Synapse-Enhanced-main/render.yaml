@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: synapse-enhanced
+    runtime: node
+    plan: free
+
+    buildCommand: npm ci --include=dev && npx prisma db push && npm run build
+    startCommand: npm run start
+
+    healthCheckPath: /health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Free plan has no persistent disk: keep uploads in MySQL so they survive restarts.
+      # With a paid Render Disk, use UPLOAD_STORAGE=disk and UPLOAD_DIR=/var/data/uploads instead.
+      - key: UPLOAD_STORAGE
+        value: database
+
+      - key: NEXT_PUBLIC_CLERK_SIGN_IN_URL
+        value: /sign-in
+
+      - key: NEXT_PUBLIC_CLERK_SIGN_UP_URL
+        value: /sign-up
+
+      - key: NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL
+        value: /chat
+
+      - key: NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL
+        value: /chat
+
+      - key: DATABASE_URL
+        sync: false
+
+      - key: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+        sync: false
+
+      - key: CLERK_SECRET_KEY
+        sync: false
